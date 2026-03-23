@@ -1,6 +1,7 @@
-import { useCallback, useRef, useState } from 'react'
-import { GoogleMap, useJsApiLoader, OverlayView } from '@react-google-maps/api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { GoogleMap, OverlayView } from '@react-google-maps/api'
 import type { CrimeRecord } from '../types/crime'
+import type { RouteScore } from '../utils/routeScore'
 
 const SEATTLE_CENTER = { lat: 47.6062, lng: -122.3321 }
 
@@ -40,7 +41,7 @@ interface MarkerProps {
 }
 
 function CrimeMarker({ crime, onClick, isSelected }: MarkerProps) {
-  const color = getMarkerColor(crime.offense_parent_group)
+  const color = getMarkerColor(crime.offense_sub_category)
   return (
     <OverlayView
       position={{ lat: parseFloat(crime.latitude), lng: parseFloat(crime.longitude) }}
@@ -59,24 +60,35 @@ function CrimeMarker({ crime, onClick, isSelected }: MarkerProps) {
           transform: 'translate(-50%, -50%)',
           transition: 'all 0.15s ease',
         }}
-        title={crime.offense}
+        title={crime.nibrs_offense_code_description}
       />
     </OverlayView>
   )
 }
 
 interface Props {
+  isLoaded: boolean
+  loadError: Error | undefined
   data: CrimeRecord[]
   selectedCrime: CrimeRecord | null
   onSelectCrime: (crime: CrimeRecord) => void
+  routes?: google.maps.DirectionsRoute[]
+  routeScores?: RouteScore[]
+  selectedRouteIndex?: number
+  pinMode?: 'none' | 'origin' | 'destination'
+  originCoords?: google.maps.LatLngLiteral | null
+  destCoords?: google.maps.LatLngLiteral | null
+  onMapClick?: (coords: google.maps.LatLngLiteral) => void
 }
 
-export function Map({ data, selectedCrime, onSelectCrime }: Props) {
-  const { isLoaded, loadError } = useJsApiLoader({
-    googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
-  })
-
+export function Map({
+  isLoaded, loadError,
+  data, selectedCrime, onSelectCrime,
+  routes = [], routeScores = [], selectedRouteIndex = 0,
+  pinMode = 'none', originCoords, destCoords, onMapClick,
+}: Props) {
   const mapRef = useRef<google.maps.Map | null>(null)
+  const polylineRefs = useRef<google.maps.Polyline[]>([])
   const [zoom, setZoom] = useState(12)
 
   const onLoad = useCallback((map: google.maps.Map) => {
@@ -88,6 +100,54 @@ export function Map({ data, selectedCrime, onSelectCrime }: Props) {
       setZoom(mapRef.current.getZoom() || 12)
     }
   }, [])
+
+  const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (pinMode !== 'none' && e.latLng && onMapClick) {
+      onMapClick({ lat: e.latLng.lat(), lng: e.latLng.lng() })
+    }
+  }, [pinMode, onMapClick])
+
+  // ルートをポリラインで描画
+  useEffect(() => {
+    // 既存ポリラインを削除
+    polylineRefs.current.forEach((p) => p.setMap(null))
+    polylineRefs.current = []
+    if (!isLoaded || !mapRef.current || routes.length === 0) return
+
+    routes.forEach((route, index) => {
+      const score = routeScores.find((s) => s.index === index)
+      const isSelected = index === selectedRouteIndex
+      const color = score?.color ?? '#94a3b8'
+      const path = google.maps.geometry?.encoding?.decodePath(route.overview_polyline)
+        ?? route.overview_path
+
+      const polyline = new google.maps.Polyline({
+        path,
+        geodesic: true,
+        strokeColor: color,
+        strokeOpacity: isSelected ? 0.9 : 0.35,
+        strokeWeight: isSelected ? 6 : 3,
+        map: mapRef.current!,
+        zIndex: isSelected ? 10 : 1,
+      })
+      polylineRefs.current.push(polyline)
+    })
+
+    // 選択中ルートにフィット
+    const selected = routes[selectedRouteIndex]
+    if (selected && mapRef.current) {
+      const bounds = new google.maps.LatLngBounds()
+      selected.legs.forEach((leg) => {
+        bounds.extend(leg.start_location)
+        bounds.extend(leg.end_location)
+      })
+      mapRef.current.fitBounds(bounds, 80)
+    }
+
+    return () => {
+      polylineRefs.current.forEach((p) => p.setMap(null))
+    }
+  }, [isLoaded, routes, routeScores, selectedRouteIndex])
 
   if (loadError) {
     return (
@@ -115,13 +175,14 @@ export function Map({ data, selectedCrime, onSelectCrime }: Props) {
   const visibleData = zoom < 11 ? data.filter((_, i) => i % 3 === 0) : data
 
   return (
-    <div className="flex-1 relative">
+    <div className={`flex-1 relative ${pinMode !== 'none' ? 'cursor-crosshair' : ''}`}>
       <GoogleMap
         mapContainerStyle={{ width: '100%', height: '100%' }}
         center={SEATTLE_CENTER}
         zoom={12}
         onLoad={onLoad}
         onZoomChanged={onZoomChanged}
+        onClick={handleMapClick}
         options={{
           styles: MAP_STYLES,
           disableDefaultUI: false,
@@ -129,6 +190,7 @@ export function Map({ data, selectedCrime, onSelectCrime }: Props) {
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: true,
+          draggableCursor: pinMode !== 'none' ? 'crosshair' : undefined,
         }}
       >
         {visibleData.map((crime) => (
@@ -139,6 +201,30 @@ export function Map({ data, selectedCrime, onSelectCrime }: Props) {
             isSelected={selectedCrime?.offense_id === crime.offense_id}
           />
         ))}
+
+        {/* 出発地ピン */}
+        {originCoords && (
+          <OverlayView position={originCoords} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+            <div style={{ transform: 'translate(-50%, -100%)' }} className="flex flex-col items-center">
+              <div className="bg-green-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap">
+                出発地
+              </div>
+              <div style={{ width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '10px solid #22c55e' }} />
+            </div>
+          </OverlayView>
+        )}
+
+        {/* 目的地ピン */}
+        {destCoords && (
+          <OverlayView position={destCoords} mapPaneName={OverlayView.OVERLAY_MOUSE_TARGET}>
+            <div style={{ transform: 'translate(-50%, -100%)' }} className="flex flex-col items-center">
+              <div className="bg-red-500 text-white text-xs font-bold px-2 py-0.5 rounded-full shadow-lg whitespace-nowrap">
+                目的地
+              </div>
+              <div style={{ width: 0, height: 0, borderLeft: '6px solid transparent', borderRight: '6px solid transparent', borderTop: '10px solid #ef4444' }} />
+            </div>
+          </OverlayView>
+        )}
       </GoogleMap>
 
       {/* 凡例 */}

@@ -1,5 +1,8 @@
+import { useState } from 'react'
 import type { CrimeRecord, CrimeFilters } from '../types/crime'
 import { OFFENSE_GROUPS, PRECINCTS, DATE_RANGE_LABELS } from '../types/crime'
+import { RoutePanel } from './RoutePanel'
+import type { RouteScore } from '../utils/routeScore'
 
 interface Props {
   filters: CrimeFilters
@@ -12,6 +15,15 @@ interface Props {
   onSelectCrime: (crime: CrimeRecord) => void
   isOpen: boolean
   onToggle: () => void
+  onRoutesReady: (routes: google.maps.DirectionsRoute[], scores: RouteScore[], selectedIndex: number) => void
+  onRouteClear: () => void
+  isLoaded: boolean
+  pinMode: 'none' | 'origin' | 'destination'
+  onPinModeChange: (mode: 'none' | 'origin' | 'destination') => void
+  originCoords: google.maps.LatLngLiteral | null
+  destCoords: google.maps.LatLngLiteral | null
+  onOriginCoordsChange: (coords: google.maps.LatLngLiteral | null) => void
+  onDestCoordsChange: (coords: google.maps.LatLngLiteral | null) => void
 }
 
 function formatShortDate(dateStr: string): string {
@@ -31,14 +43,25 @@ export function SidePanel({
   onSelectCrime,
   isOpen,
   onToggle,
+  onRoutesReady,
+  onRouteClear,
+  isLoaded,
+  pinMode,
+  onPinModeChange,
+  originCoords,
+  destCoords,
+  onOriginCoordsChange,
+  onDestCoordsChange,
 }: Props) {
+  const [activeTab, setActiveTab] = useState<'data' | 'route'>('data')
+
   const updateFilter = <K extends keyof CrimeFilters>(key: K, value: CrimeFilters[K]) => {
     onFilterChange({ ...filters, [key]: value })
   }
 
   // 犯罪種別ごとの件数集計
   const offenseCounts = data.reduce<Record<string, number>>((acc, c) => {
-    const key = c.offense_parent_group || 'その他'
+    const key = c.offense_sub_category || 'その他'
     acc[key] = (acc[key] || 0) + 1
     return acc
   }, {})
@@ -68,17 +91,55 @@ export function SidePanel({
       >
         {/* ヘッダー */}
         <div className="px-5 pt-6 pb-4 border-b border-blue-500/20">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2">
             <span className="text-blue-400 text-xl">🚔</span>
             <h1 className="text-white font-bold text-lg leading-tight">
-              Seattle Crime Map
+              Her Route
             </h1>
           </div>
-          <p className="text-blue-400 text-xs">シアトル警察 犯罪データ可視化</p>
+        </div>
+
+        {/* タブ */}
+        <div className="flex border-b border-blue-500/20">
+          <button
+            onClick={() => setActiveTab('data')}
+            className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
+              activeTab === 'data'
+                ? 'text-white border-b-2 border-blue-400'
+                : 'text-slate-400 hover:text-slate-300'
+            }`}
+          >
+            犯罪データ
+          </button>
+          <button
+            onClick={() => setActiveTab('route')}
+            className={`flex-1 py-2.5 text-xs font-semibold transition-colors ${
+              activeTab === 'route'
+                ? 'text-white border-b-2 border-blue-400'
+                : 'text-slate-400 hover:text-slate-300'
+            }`}
+          >
+            ルート探索
+          </button>
         </div>
 
         {/* スクロールエリア */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-6 scrollbar-thin">
+        {activeTab === 'route' && (
+          <RoutePanel
+            crimes={data}
+            isLoaded={isLoaded}
+            pinMode={pinMode}
+            onPinModeChange={onPinModeChange}
+            originCoords={originCoords}
+            destCoords={destCoords}
+            onOriginCoordsChange={onOriginCoordsChange}
+            onDestCoordsChange={onDestCoordsChange}
+            onRoutesReady={onRoutesReady}
+            onClear={onRouteClear}
+          />
+        )}
+        {activeTab === 'data' && (<>
 
           {/* フィルター */}
           <section>
@@ -198,15 +259,16 @@ export function SidePanel({
                       : 'bg-slate-800/50 border-transparent hover:bg-slate-700/50'
                   }`}
                 >
-                  <p className="text-white text-xs font-medium truncate">{crime.offense}</p>
-                  <p className="text-slate-400 text-xs mt-0.5 truncate">{crime._100_block_address}</p>
+                  <p className="text-white text-xs font-medium truncate">{crime.nibrs_offense_code_description}</p>
+                  <p className="text-slate-400 text-xs mt-0.5 truncate">{crime.block_address}</p>
                   <p className="text-blue-400 text-xs mt-0.5">
-                    {formatShortDate(crime.report_datetime)}
+                    {formatShortDate(crime.report_date_time)}
                   </p>
                 </button>
               ))}
             </div>
           </section>
+        </>)}
         </div>
       </aside>
     </>

@@ -1,69 +1,52 @@
-import axios from 'axios'
 import type { CrimeRecord, CrimeFilters } from '../types/crime'
 
 const BASE_URL = 'https://data.seattle.gov/resource/tazs-3rd5.json'
-const APP_TOKEN = '' // オプション：Socrataアプリトークン（レート制限緩和用）
 
-function getDateFilter(dateRange: CrimeFilters['dateRange']): string {
+function getFromDate(dateRange: CrimeFilters['dateRange']): Date | null {
   const now = new Date()
-  let fromDate: Date | null = null
-
   switch (dateRange) {
-    case 'today':
-      fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-      break
-    case 'week':
-      fromDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      break
-    case 'month':
-      fromDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-      break
-    case '3months':
-      fromDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
-      break
-    case 'year':
-      fromDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
-      break
-    case 'all':
-      return ''
+    case 'today': return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    case 'week': return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+    case 'month': return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+    case '3months': return new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000)
+    case 'year': return new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000)
+    default: return null
   }
-
-  if (!fromDate) return ''
-  return `&$where=report_datetime >= '${fromDate.toISOString()}'`
 }
 
 export async function fetchCrimeData(
   filters: CrimeFilters,
-  limit = 2000
+  limit = 5000
 ): Promise<CrimeRecord[]> {
-  let query = `${BASE_URL}?$limit=${limit}&$order=report_datetime DESC`
+  // $where は等値のみサポート。日付・座標はクライアント側でフィルタリング
+  let url = `${BASE_URL}?$limit=${limit}&$order=report_date_time%20DESC`
 
   if (filters.offenseGroup !== 'ALL') {
-    query += `&offense_parent_group=${encodeURIComponent(filters.offenseGroup)}`
+    url += `&offense_sub_category=${encodeURIComponent(filters.offenseGroup)}`
   }
 
   if (filters.precinct !== 'ALL') {
-    query += `&precinct=${encodeURIComponent(filters.precinct)}`
+    url += `&precinct=${encodeURIComponent(filters.precinct)}`
   }
 
-  const dateFilter = getDateFilter(filters.dateRange)
-  query += dateFilter
+  const res = await fetch(url, { headers: { Accept: 'application/json' } })
+  if (!res.ok) throw new Error(`API error: ${res.status}`)
 
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-  }
-  if (APP_TOKEN) {
-    headers['X-App-Token'] = APP_TOKEN
-  }
+  const data: CrimeRecord[] = await res.json()
 
-  const response = await axios.get<CrimeRecord[]>(query, { headers })
+  const fromDate = getFromDate(filters.dateRange)
 
-  // 座標データがあるものだけ返す
-  return response.data.filter(
-    (r) =>
-      r.latitude &&
-      r.longitude &&
-      !isNaN(parseFloat(r.latitude)) &&
-      !isNaN(parseFloat(r.longitude))
-  )
+  return data.filter((r) => {
+    // 座標フィルター（シアトル範囲）
+    const lat = parseFloat(r.latitude)
+    const lng = parseFloat(r.longitude)
+    if (isNaN(lat) || isNaN(lng) || lat < 47.0 || lat > 48.5 || lng < -123.0 || lng > -121.5) {
+      return false
+    }
+    // 日付フィルター
+    if (fromDate && new Date(r.report_date_time) < fromDate) {
+      return false
+    }
+    return true
+  })
 }

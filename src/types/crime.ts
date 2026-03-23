@@ -1,17 +1,17 @@
 export interface CrimeRecord {
   offense_id: string
-  report_datetime: string
-  offense_start_datetime: string
-  offense_end_datetime?: string
-  offense: string
-  offense_parent_group: string
-  crime_against_category: string
-  group_a_b: string
+  report_date_time: string
+  offense_date: string
+  nibrs_offense_code_description: string
+  offense_sub_category: string
+  offense_category: string
+  nibrs_group_a_b: string
+  nibrs_crime_against_category: string
   precinct: string
   sector: string
   beat: string
-  mcpp: string
-  _100_block_address: string
+  neighborhood: string
+  block_address: string
   longitude: string
   latitude: string
 }
@@ -25,18 +25,19 @@ export interface CrimeFilters {
 export const OFFENSE_GROUPS = [
   'ALL',
   'ASSAULT OFFENSES',
-  'BURGLARY/BREAKING&ENTERING',
-  'DESTRUCTION/DAMAGE/VANDALISM OF PROPERTY',
-  'DRUG/NARCOTIC OFFENSES',
+  'AGGRAVATED ASSAULT',
+  'BURGLARY',
+  'HOMICIDE',
   'LARCENY-THEFT',
   'MOTOR VEHICLE THEFT',
+  'NARCOTIC VIOLATIONS (INCLUDES DRUG EQUIP.)',
   'ROBBERY',
   'SEX OFFENSES',
-  'TRESPASS OF REAL PROPERTY',
-  'WEAPON LAW VIOLATIONS',
+  'TRESPASS',
+  'WEAPON LAW VIOLATION',
 ]
 
-export const PRECINCTS = ['ALL', 'NORTH', 'EAST', 'SOUTH', 'SOUTHWEST', 'WEST']
+export const PRECINCTS = ['ALL', 'North', 'East', 'South', 'Southwest', 'West']
 
 export const DATE_RANGE_LABELS: Record<CrimeFilters['dateRange'], string> = {
   today: '今日',

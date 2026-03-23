@@ -25,9 +25,9 @@ export function CrimeDetail({ crime, onClose }: Props) {
         <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-4 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold text-white leading-tight">
-              {crime.offense}
+              {crime.nibrs_offense_code_description}
             </h2>
-            <p className="text-blue-300 text-sm mt-0.5">{crime.offense_parent_group}</p>
+            <p className="text-blue-300 text-sm mt-0.5">{crime.offense_sub_category}</p>
           </div>
           <button
             onClick={onClose}
@@ -39,13 +39,13 @@ export function CrimeDetail({ crime, onClose }: Props) {
 
         {/* Body */}
         <div className="px-6 py-5 space-y-4">
-          <DetailRow label="発生日時" value={formatDate(crime.offense_start_datetime)} />
-          <DetailRow label="報告日時" value={formatDate(crime.report_datetime)} />
-          <DetailRow label="住所" value={crime._100_block_address || '不明'} />
+          <DetailRow label="発生日時" value={formatDate(crime.offense_date)} />
+          <DetailRow label="報告日時" value={formatDate(crime.report_date_time)} />
+          <DetailRow label="住所" value={crime.block_address || '不明'} />
           <DetailRow label="地区 / セクター / ビート" value={`${crime.precinct} / ${crime.sector} / ${crime.beat}`} />
-          <DetailRow label="エリア (MCPP)" value={crime.mcpp || '不明'} />
-          <DetailRow label="被害カテゴリ" value={crime.crime_against_category || '不明'} />
-          <DetailRow label="グループ分類" value={crime.group_a_b || '不明'} />
+          <DetailRow label="エリア" value={crime.neighborhood || '不明'} />
+          <DetailRow label="被害カテゴリ" value={crime.nibrs_crime_against_category || '不明'} />
+          <DetailRow label="カテゴリ" value={crime.offense_category || '不明'} />
         </div>
 
         {/* Footer */}
