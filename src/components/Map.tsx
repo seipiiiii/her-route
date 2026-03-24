@@ -79,6 +79,7 @@ interface Props {
   originCoords?: google.maps.LatLngLiteral | null
   destCoords?: google.maps.LatLngLiteral | null
   onMapClick?: (coords: google.maps.LatLngLiteral) => void
+  showHeatmap?: boolean
 }
 
 export function Map({
@@ -86,9 +87,11 @@ export function Map({
   data, selectedCrime, onSelectCrime,
   routes = [], routeScores = [], selectedRouteIndex = 0,
   pinMode = 'none', originCoords, destCoords, onMapClick,
+  showHeatmap = false,
 }: Props) {
   const mapRef = useRef<google.maps.Map | null>(null)
   const polylineRefs = useRef<google.maps.Polyline[]>([])
+  const heatmapRef = useRef<google.maps.visualization.HeatmapLayer | null>(null)
   const [zoom, setZoom] = useState(12)
 
   const onLoad = useCallback((map: google.maps.Map) => {
@@ -148,6 +151,49 @@ export function Map({
       polylineRefs.current.forEach((p) => p.setMap(null))
     }
   }, [isLoaded, routes, routeScores, selectedRouteIndex])
+
+  // ヒートマップ
+  useEffect(() => {
+    if (!isLoaded || !mapRef.current) return
+
+    if (showHeatmap) {
+      const points = data
+        .map((r) => {
+          const lat = parseFloat(r.latitude)
+          const lng = parseFloat(r.longitude)
+          if (isNaN(lat) || isNaN(lng)) return null
+          return new google.maps.LatLng(lat, lng)
+        })
+        .filter(Boolean) as google.maps.LatLng[]
+
+      if (!heatmapRef.current) {
+        heatmapRef.current = new google.maps.visualization.HeatmapLayer({
+          data: points,
+          map: mapRef.current,
+          radius: 30,
+          opacity: 0.7,
+          gradient: [
+            'rgba(0,0,255,0)',
+            'rgba(0,100,255,0.5)',
+            'rgba(0,200,200,0.7)',
+            'rgba(0,255,100,0.8)',
+            'rgba(255,255,0,0.9)',
+            'rgba(255,100,0,1)',
+            'rgba(255,0,0,1)',
+          ],
+        })
+      } else {
+        heatmapRef.current.setData(points)
+        heatmapRef.current.setMap(mapRef.current)
+      }
+    } else {
+      heatmapRef.current?.setMap(null)
+    }
+
+    return () => {
+      heatmapRef.current?.setMap(null)
+    }
+  }, [isLoaded, showHeatmap, data])
 
   if (loadError) {
     return (

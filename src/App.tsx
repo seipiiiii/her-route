@@ -14,7 +14,7 @@ const DEFAULT_FILTERS: CrimeFilters = {
 }
 
 // ライブラリ配列はモジュールレベルで定義（再レンダリングで参照が変わらないようにする）
-const LIBRARIES: ('places')[] = ['places']
+const LIBRARIES: ('places' | 'visualization')[] = ['places', 'visualization']
 
 export default function App() {
   const { isLoaded, loadError } = useJsApiLoader({
@@ -31,6 +31,7 @@ export default function App() {
   const [pinMode, setPinMode] = useState<'none' | 'origin' | 'destination'>('none')
   const [originCoords, setOriginCoords] = useState<google.maps.LatLngLiteral | null>(null)
   const [destCoords, setDestCoords] = useState<google.maps.LatLngLiteral | null>(null)
+  const [showHeatmap, setShowHeatmap] = useState(false)
 
   const { data, loading, error, refetch, lastUpdated } = useCrimeData(filters)
 
@@ -111,10 +112,20 @@ export default function App() {
         )}
 
         {!loading && routes.length === 0 && (
-          <div className="absolute top-4 right-4 z-20 bg-slate-900/90 border border-blue-500/30 px-3 py-2 rounded-xl backdrop-blur">
+          <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-slate-900/90 border border-blue-500/30 px-3 py-2 rounded-xl backdrop-blur">
             <span className="text-blue-300 text-xs">
               {data.length.toLocaleString()} 件表示中
             </span>
+            <button
+              onClick={() => setShowHeatmap(!showHeatmap)}
+              className={`text-xs px-2 py-1 rounded-lg font-semibold transition-colors ${
+                showHeatmap
+                  ? 'bg-orange-500 text-white'
+                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              {showHeatmap ? '🔥 ヒートマップ ON' : '🔥 ヒートマップ'}
+            </button>
           </div>
         )}
 
@@ -131,6 +142,7 @@ export default function App() {
           originCoords={originCoords}
           destCoords={destCoords}
           onMapClick={handleMapClick}
+          showHeatmap={showHeatmap}
         />
       </main>
 
