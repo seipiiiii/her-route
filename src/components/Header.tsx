@@ -1,13 +1,18 @@
+import type { CityId } from '../types/crime'
+import { CITY_LIST } from '../utils/cityConfig'
+
 interface Props {
+  city: CityId
+  onCityChange: (city: CityId) => void
   dataCount: number
   loading: boolean
   onRefetch: () => void
   lastUpdated: Date | null
 }
 
-export function Header({ dataCount, loading, onRefetch, lastUpdated }: Props) {
+export function Header({ city, onCityChange, dataCount, loading, onRefetch, lastUpdated }: Props) {
   return (
-    <header className="flex items-center h-14 px-4 bg-white border-b border-gray-200 gap-4 flex-shrink-0 z-10">
+    <header className="flex items-center h-14 px-4 bg-white border-b border-gray-200 gap-3 flex-shrink-0 z-10">
       {/* Logo */}
       <div className="flex items-center gap-2.5 flex-shrink-0">
         <div className="w-8 h-8 rounded-lg bg-green-500 flex items-center justify-center shadow-sm">
@@ -15,17 +20,29 @@ export function Header({ dataCount, loading, onRefetch, lastUpdated }: Props) {
             <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/>
           </svg>
         </div>
-        <div className="flex items-baseline gap-2">
-          <span className="font-bold text-gray-900 text-sm tracking-tight">Her Route</span>
-          <span className="text-gray-300 text-xs hidden sm:block">|</span>
-          <span className="text-gray-400 text-xs hidden sm:block">Seattle Safety Map</span>
-        </div>
+        <span className="font-bold text-gray-900 text-sm tracking-tight hidden sm:block">Her Route</span>
       </div>
 
-      {/* Divider */}
       <div className="w-px h-5 bg-gray-200 flex-shrink-0" />
 
-      {/* Search bar */}
+      {/* 都市セレクター */}
+      <div className="flex items-center gap-0.5 bg-gray-100 rounded-xl p-1 flex-shrink-0">
+        {CITY_LIST.map(c => (
+          <button
+            key={c.id}
+            onClick={() => onCityChange(c.id)}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+              city === c.id
+                ? 'bg-white text-gray-900 shadow-sm'
+                : 'text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {c.emoji} {c.nameJa}
+          </button>
+        ))}
+      </div>
+
+      {/* 検索バー */}
       <div className="flex-1 max-w-sm">
         <div className="relative">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">
@@ -42,14 +59,13 @@ export function Header({ dataCount, loading, onRefetch, lastUpdated }: Props) {
         </div>
       </div>
 
-      {/* Right: stats + refresh */}
+      {/* 右側：件数 + 更新 */}
       <div className="ml-auto flex items-center gap-3 flex-shrink-0">
         {lastUpdated && (
           <span className="text-[11px] text-gray-400 hidden xl:block tabular-nums">
             {lastUpdated.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} 更新
           </span>
         )}
-
         <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-1.5">
           {loading ? (
             <div className="w-3.5 h-3.5 border-2 border-green-500 border-t-transparent rounded-full animate-spin" />

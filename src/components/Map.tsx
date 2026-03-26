@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { GoogleMap, OverlayView } from '@react-google-maps/api'
-import type { CrimeRecord } from '../types/crime'
+import type { CrimeRecord, CityId } from '../types/crime'
 import type { RouteScore } from '../utils/routeScore'
-
-const SEATTLE_CENTER = { lat: 47.6062, lng: -122.3321 }
+import { CITIES } from '../utils/cityConfig'
 
 const MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
@@ -69,6 +68,7 @@ function CrimeMarker({ crime, onClick, isSelected }: MarkerProps) {
 interface Props {
   isLoaded: boolean
   loadError: Error | undefined
+  city: CityId
   data: CrimeRecord[]
   selectedCrime: CrimeRecord | null
   onSelectCrime: (crime: CrimeRecord) => void
@@ -84,6 +84,7 @@ interface Props {
 
 export function Map({
   isLoaded, loadError,
+  city,
   data, selectedCrime, onSelectCrime,
   routes = [], routeScores = [], selectedRouteIndex = 0,
   pinMode = 'none', originCoords, destCoords, onMapClick,
@@ -94,9 +95,20 @@ export function Map({
   const heatmapRef = useRef<google.maps.visualization.HeatmapLayer | null>(null)
   const [zoom, setZoom] = useState(12)
 
+  const cityInfo = CITIES[city]
+
   const onLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map
   }, [])
+
+  // 都市切り替え時にマップを移動
+  useEffect(() => {
+    if (mapRef.current) {
+      mapRef.current.panTo(cityInfo.center)
+      mapRef.current.setZoom(cityInfo.defaultZoom)
+      setZoom(cityInfo.defaultZoom)
+    }
+  }, [city, cityInfo.center, cityInfo.defaultZoom])
 
   const onZoomChanged = useCallback(() => {
     if (mapRef.current) {
@@ -224,8 +236,8 @@ export function Map({
     <div className={`flex-1 h-full relative ${pinMode !== 'none' ? 'cursor-crosshair' : ''}`}>
       <GoogleMap
         mapContainerStyle={{ width: '100%', height: '100%' }}
-        center={SEATTLE_CENTER}
-        zoom={12}
+        center={cityInfo.center}
+        zoom={cityInfo.defaultZoom}
         onLoad={onLoad}
         onZoomChanged={onZoomChanged}
         onClick={handleMapClick}

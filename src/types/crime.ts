@@ -1,3 +1,5 @@
+export type CityId = 'seattle' | 'losangeles' | 'newyork'
+
 export interface CrimeRecord {
   offense_id: string
   report_date_time: string
@@ -14,6 +16,7 @@ export interface CrimeRecord {
   block_address: string
   longitude: string
   latitude: string
+  city?: CityId
 }
 
 export interface CrimeFilters {

@@ -8,7 +8,8 @@ import { CrimeDetail } from './components/CrimeDetail'
 import { SettingsPage } from './components/Settings'
 import { ProfilePage } from './components/Profile'
 import { useCrimeData } from './hooks/useCrimeData'
-import type { CrimeFilters, CrimeRecord } from './types/crime'
+import type { CrimeFilters, CrimeRecord, CityId } from './types/crime'
+import { OFFENSE_GROUPS } from './types/crime'
 import type { RouteScore } from './utils/routeScore'
 
 const DEFAULT_FILTERS: CrimeFilters = {
@@ -28,6 +29,7 @@ export default function App() {
     libraries: LIBRARIES,
   })
 
+  const [city, setCity] = useState<CityId>('seattle')
   const [activeNav, setActiveNav] = useState<NavItem>('map')
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const [filters, setFilters] = useState<CrimeFilters>(DEFAULT_FILTERS)
@@ -41,17 +43,40 @@ export default function App() {
   const [destCoords, setDestCoords] = useState<google.maps.LatLngLiteral | null>(null)
   const [showHeatmap, setShowHeatmap] = useState(false)
 
-  const { data, loading, error, refetch, lastUpdated } = useCrimeData(filters)
+  const { data, loading, error, refetch, lastUpdated } = useCrimeData(city, filters)
 
   const availableNeighborhoods = useMemo(
     () => [...new Set(data.map((r) => r.neighborhood).filter(Boolean))].sort(),
     [data],
   )
 
-  const filteredData = useMemo(
-    () => (neighborhood === 'ALL' ? data : data.filter((r) => r.neighborhood === neighborhood)),
-    [data, neighborhood],
+  // 犯罪種別: Seattle は静的リスト（サーバー側フィルター対応）、他都市はデータから動的生成
+  const availableOffenseGroups = useMemo(() => {
+    if (city === 'seattle') return OFFENSE_GROUPS
+    const groups = [...new Set(data.map((r) => r.offense_sub_category).filter(Boolean))].sort()
+    return ['ALL', ...groups]
+  }, [city, data])
+
+  // エリア: データから動的生成（全都市対応）
+  const availablePrecincts = useMemo(
+    () => ['ALL', ...new Set(data.map((r) => r.precinct).filter(Boolean))].sort(),
+    [data],
   )
+
+  const filteredData = useMemo(() => {
+    let result = neighborhood === 'ALL' ? data : data.filter((r) => r.neighborhood === neighborhood)
+    // Seattle以外はクライアント側でprecinctフィルター適用
+    if (city !== 'seattle' && filters.precinct !== 'ALL') {
+      result = result.filter((r) => r.precinct === filters.precinct)
+    }
+    return result
+  }, [data, neighborhood, city, filters.precinct])
+
+  const handleCityChange = (newCity: CityId) => {
+    setCity(newCity)
+    setFilters(DEFAULT_FILTERS)
+    setNeighborhood('ALL')
+  }
 
   const isFullPage = FULL_PAGE_NAVS.includes(activeNav)
 
@@ -103,6 +128,8 @@ export default function App() {
   return (
     <div className="flex flex-col h-screen bg-white overflow-hidden">
       <Header
+        city={city}
+        onCityChange={handleCityChange}
         dataCount={filteredData.length}
         loading={loading}
         onRefetch={refetch}
@@ -156,6 +183,7 @@ export default function App() {
               <Map
                 isLoaded={isLoaded}
                 loadError={loadError}
+                city={city}
                 data={filteredData}
                 selectedCrime={selectedCrime}
                 onSelectCrime={setSelectedCrime}
@@ -175,11 +203,14 @@ export default function App() {
               <RightPanel
                 activeNav={activeNav}
                 onClose={() => setRightPanelOpen(false)}
+                city={city}
                 filters={filters}
                 onFilterChange={setFilters}
                 neighborhood={neighborhood}
                 onNeighborhoodChange={setNeighborhood}
                 availableNeighborhoods={availableNeighborhoods}
+                availableOffenseGroups={availableOffenseGroups}
+                availablePrecincts={availablePrecincts}
                 data={filteredData}
                 loading={loading}
                 selectedCrime={selectedCrime}

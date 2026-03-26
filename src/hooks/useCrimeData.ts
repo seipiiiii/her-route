@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
-import type { CrimeRecord, CrimeFilters } from '../types/crime'
+import type { CrimeRecord, CrimeFilters, CityId } from '../types/crime'
 import { fetchCrimeData } from '../utils/api'
 
-export function useCrimeData(filters: CrimeFilters) {
+export function useCrimeData(city: CityId, filters: CrimeFilters) {
   const [data, setData] = useState<CrimeRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -12,7 +12,7 @@ export function useCrimeData(filters: CrimeFilters) {
     setLoading(true)
     setError(null)
     try {
-      const records = await fetchCrimeData(filters)
+      const records = await fetchCrimeData(city, filters)
       setData(records)
       setLastUpdated(new Date())
     } catch (e) {
@@ -21,7 +21,7 @@ export function useCrimeData(filters: CrimeFilters) {
     } finally {
       setLoading(false)
     }
-  }, [filters.offenseGroup, filters.dateRange, filters.precinct])
+  }, [city, filters.offenseGroup, filters.dateRange, filters.precinct])
 
   useEffect(() => {
     load()

@@ -1,19 +1,23 @@
 import { useState } from 'react'
 import { RoutePanel } from './RoutePanel'
 import type { NavItem } from './NavBar'
-import type { CrimeRecord, CrimeFilters } from '../types/crime'
-import { OFFENSE_GROUPS, PRECINCTS, DATE_RANGE_LABELS } from '../types/crime'
+import type { CrimeRecord, CrimeFilters, CityId } from '../types/crime'
+import { DATE_RANGE_LABELS } from '../types/crime'
 import type { RouteScore } from '../utils/routeScore'
+import { useFBIStats } from '../hooks/useFBIStats'
 
 interface Props {
   activeNav: NavItem
   onClose: () => void
+  city: CityId
   // Data
   filters: CrimeFilters
   onFilterChange: (f: CrimeFilters) => void
   neighborhood: string
   onNeighborhoodChange: (n: string) => void
   availableNeighborhoods: string[]
+  availableOffenseGroups: string[]
+  availablePrecincts: string[]
   data: CrimeRecord[]
   loading: boolean
   selectedCrime: CrimeRecord | null
@@ -61,7 +65,9 @@ const sectionLabel = 'text-gray-400 text-[10px] font-semibold uppercase tracking
 
 // ─── Overview Panel ────────────────────────────────────────────────────────────
 
-function OverviewPanel({ data, loading }: Pick<Props, 'data' | 'loading'>) {
+function OverviewPanel({ data, loading, city }: Pick<Props, 'data' | 'loading' | 'city'>) {
+  const { stats: fbiStats, loading: fbiLoading, hasKey } = useFBIStats(city)
+
   const offenseCounts = data.reduce<Record<string, number>>((acc, c) => {
     const key = c.offense_sub_category || 'その他'
     acc[key] = (acc[key] || 0) + 1
@@ -76,18 +82,68 @@ function OverviewPanel({ data, loading }: Pick<Props, 'data' | 'loading'>) {
   }, {})
   const topNeighborhoods = Object.entries(neighborhoodCounts).sort((a, b) => b[1] - a[1]).slice(0, 5)
 
+  const topFBI = [...fbiStats].sort((a, b) => b.count - a.count).slice(0, 5)
+  const fbiTotal = fbiStats.reduce((s, r) => s + r.count, 0)
+
   return (
     <div className="px-4 py-4 space-y-6">
-      {/* Total count card */}
+      {/* リアルタイムカード */}
       <div className="bg-gradient-to-br from-green-50 to-emerald-50 border border-green-100 rounded-2xl p-5">
-        <p className="text-green-600 text-xs font-semibold mb-1">表示中のインシデント</p>
+        <p className="text-green-600 text-xs font-semibold mb-1">リアルタイムデータ</p>
         <p className="text-gray-900 font-bold text-3xl tabular-nums leading-none">
           {loading ? '—' : data.length.toLocaleString()}
         </p>
-        <p className="text-green-500 text-xs mt-1.5">件</p>
+        <p className="text-green-500 text-xs mt-1.5">件 (表示中)</p>
       </div>
 
-      {/* Top offenses */}
+      {/* FBI CDE 統計 */}
+      {hasKey ? (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <p className={sectionLabel}>FBI CDE 年間統計 (2022)</p>
+            {fbiLoading && (
+              <div className="w-3 h-3 border-2 border-green-400 border-t-transparent rounded-full animate-spin" />
+            )}
+          </div>
+          {!fbiLoading && topFBI.length > 0 ? (
+            <>
+              <div className="space-y-3">
+                {topFBI.map(({ offense_name, count }) => {
+                  const pct = fbiTotal > 0 ? Math.round((count / fbiTotal) * 100) : 0
+                  return (
+                    <div key={offense_name}>
+                      <div className="flex justify-between text-xs mb-1.5">
+                        <span className="text-gray-600 truncate pr-2">{offense_name}</span>
+                        <span className="text-gray-400 shrink-0 tabular-nums">{count.toLocaleString()}</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-blue-400 rounded-full" style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-gray-400 text-[10px] mt-2">
+                出典: FBI Crime Data Explorer — 合計 {fbiTotal.toLocaleString()} 件
+              </p>
+            </>
+          ) : !fbiLoading ? (
+            <p className="text-gray-400 text-xs">このエージェントのFBIデータは取得できませんでした。</p>
+          ) : null}
+        </div>
+      ) : (
+        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
+          <p className="text-blue-700 text-xs font-semibold mb-1">💡 FBI CDE 統計を有効化</p>
+          <p className="text-blue-600 text-[11px] leading-relaxed">
+            環境変数 <code className="bg-blue-100 px-1 rounded">VITE_FBI_API_KEY</code> を設定すると
+            FBI Crime Data Explorer の年間集計が表示されます。
+            <br />
+            キーは <span className="underline">api.data.gov/signup</span> から無料取得できます。
+          </p>
+        </div>
+      )}
+
+      {/* リアルタイム: 犯罪種別 TOP 5 */}
       {topOffenses.length > 0 && (
         <div>
           <p className={`${sectionLabel} mb-3`}>犯罪種別 TOP 5</p>
@@ -110,7 +166,7 @@ function OverviewPanel({ data, loading }: Pick<Props, 'data' | 'loading'>) {
         </div>
       )}
 
-      {/* Top neighborhoods */}
+      {/* 地区別 TOP 5 */}
       {topNeighborhoods.length > 0 && (
         <div>
           <p className={`${sectionLabel} mb-3`}>地区別 TOP 5</p>
@@ -142,8 +198,9 @@ function IncidentsPanel({
   data, loading,
   filters, onFilterChange,
   neighborhood, onNeighborhoodChange, availableNeighborhoods,
+  availableOffenseGroups, availablePrecincts,
   selectedCrime, onSelectCrime,
-}: Pick<Props, 'data' | 'loading' | 'filters' | 'onFilterChange' | 'neighborhood' | 'onNeighborhoodChange' | 'availableNeighborhoods' | 'selectedCrime' | 'onSelectCrime'>) {
+}: Pick<Props, 'data' | 'loading' | 'filters' | 'onFilterChange' | 'neighborhood' | 'onNeighborhoodChange' | 'availableNeighborhoods' | 'availableOffenseGroups' | 'availablePrecincts' | 'selectedCrime' | 'onSelectCrime'>) {
   const [search, setSearch] = useState('')
 
   const updateFilter = <K extends keyof CrimeFilters>(key: K, value: CrimeFilters[K]) => {
@@ -179,7 +236,7 @@ function IncidentsPanel({
           onChange={(e) => updateFilter('offenseGroup', e.target.value)}
           className={selectClass}
         >
-          {OFFENSE_GROUPS.map((g) => (
+          {availableOffenseGroups.map((g) => (
             <option key={g} value={g}>{g === 'ALL' ? 'すべての種別' : g}</option>
           ))}
         </select>
@@ -190,8 +247,8 @@ function IncidentsPanel({
             onChange={(e) => updateFilter('precinct', e.target.value)}
             className={selectClass}
           >
-            {PRECINCTS.map((p) => (
-              <option key={p} value={p}>{p === 'ALL' ? '全管轄区' : p}</option>
+            {availablePrecincts.map((p) => (
+              <option key={p} value={p}>{p === 'ALL' ? '全エリア' : p}</option>
             ))}
           </select>
           <select
@@ -481,8 +538,10 @@ function DayNightPanel({ data }: Pick<Props, 'data'>) {
 
 export function RightPanel({
   activeNav, onClose,
+  city,
   filters, onFilterChange,
   neighborhood, onNeighborhoodChange, availableNeighborhoods,
+  availableOffenseGroups, availablePrecincts,
   data, loading, selectedCrime, onSelectCrime,
   onRoutesReady, onRouteClear, isLoaded,
   pinMode, onPinModeChange,
@@ -509,7 +568,7 @@ export function RightPanel({
       {/* Panel content */}
       <div className={`flex-1 overflow-hidden ${activeNav === 'incidents' ? 'flex flex-col' : 'overflow-y-auto'}`}>
         {activeNav === 'map' && (
-          <OverviewPanel data={data} loading={loading} />
+          <OverviewPanel data={data} loading={loading} city={city} />
         )}
         {activeNav === 'route' && (
           <div className="px-4 py-4">
@@ -536,6 +595,8 @@ export function RightPanel({
             neighborhood={neighborhood}
             onNeighborhoodChange={onNeighborhoodChange}
             availableNeighborhoods={availableNeighborhoods}
+            availableOffenseGroups={availableOffenseGroups}
+            availablePrecincts={availablePrecincts}
             selectedCrime={selectedCrime}
             onSelectCrime={onSelectCrime}
           />
