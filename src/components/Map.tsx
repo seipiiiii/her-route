@@ -221,7 +221,7 @@ export function Map({
   const visibleData = zoom < 11 ? data.filter((_, i) => i % 3 === 0) : data
 
   return (
-    <div className={`flex-1 relative ${pinMode !== 'none' ? 'cursor-crosshair' : ''}`}>
+    <div className={`flex-1 h-full relative ${pinMode !== 'none' ? 'cursor-crosshair' : ''}`}>
       <GoogleMap
         mapContainerStyle={{ width: '100%', height: '100%' }}
         center={SEATTLE_CENTER}
@@ -274,8 +274,8 @@ export function Map({
       </GoogleMap>
 
       {/* 凡例 */}
-      <div className="absolute bottom-8 right-4 bg-slate-900/90 backdrop-blur border border-blue-500/20 rounded-xl p-3 text-xs space-y-1.5">
-        <p className="text-blue-300 font-semibold mb-2">凡例</p>
+      <div className="absolute bottom-8 left-4 bg-white/95 backdrop-blur border border-gray-200 rounded-xl p-3 text-xs space-y-1.5 shadow-sm">
+        <p className="text-gray-600 font-semibold mb-2">凡例</p>
         {[
           { label: '暴行・殺人', color: '#ef4444' },
           { label: '強盗・武器', color: '#f97316' },
@@ -283,11 +283,11 @@ export function Map({
           { label: '財産犯罪', color: '#3b82f6' },
           { label: '薬物', color: '#a855f7' },
           { label: '性犯罪', color: '#ec4899' },
-          { label: 'その他', color: '#64748b' },
+          { label: 'その他', color: '#94a3b8' },
         ].map(({ label, color }) => (
           <div key={label} className="flex items-center gap-2">
             <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-            <span className="text-slate-300">{label}</span>
+            <span className="text-gray-600">{label}</span>
           </div>
         ))}
       </div>

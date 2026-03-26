@@ -19,40 +19,55 @@ function formatDate(dateStr: string): string {
 
 export function CrimeDetail({ crime, onClose }: Props) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-      <div className="bg-slate-900 border border-blue-500/30 rounded-2xl shadow-2xl w-full max-w-md text-white overflow-hidden">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+    >
+      <div className="bg-white border border-gray-200 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        {/* Accent top bar */}
+        <div className="h-[3px] bg-gradient-to-r from-green-400 via-emerald-500 to-green-400" />
+
         {/* Header */}
-        <div className="bg-gradient-to-r from-blue-900 to-blue-800 px-6 py-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-bold text-white leading-tight">
-              {crime.nibrs_offense_code_description}
-            </h2>
-            <p className="text-blue-300 text-sm mt-0.5">{crime.offense_sub_category}</p>
+        <div className="px-6 pt-5 pb-4 border-b border-gray-100">
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              <h2 className="text-gray-900 font-semibold text-[15px] leading-snug tracking-tight">
+                {crime.nibrs_offense_code_description}
+              </h2>
+              <span className="inline-block mt-1.5 px-2 py-0.5 bg-green-50 border border-green-200 text-green-700 text-[11px] rounded-md font-medium">
+                {crime.offense_sub_category}
+              </span>
+            </div>
+            <button
+              onClick={onClose}
+              className="flex-shrink-0 w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-400 hover:text-gray-600 flex items-center justify-center transition-colors text-sm"
+            >
+              ✕
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="text-blue-300 hover:text-white transition-colors text-2xl leading-none ml-4"
-          >
-            ×
-          </button>
         </div>
 
         {/* Body */}
-        <div className="px-6 py-5 space-y-4">
-          <DetailRow label="発生日時" value={formatDate(crime.offense_date)} />
-          <DetailRow label="報告日時" value={formatDate(crime.report_date_time)} />
-          <DetailRow label="住所" value={crime.block_address || '不明'} />
-          <DetailRow label="地区 / セクター / ビート" value={`${crime.precinct} / ${crime.sector} / ${crime.beat}`} />
-          <DetailRow label="エリア" value={crime.neighborhood || '不明'} />
-          <DetailRow label="被害カテゴリ" value={crime.nibrs_crime_against_category || '不明'} />
-          <DetailRow label="カテゴリ" value={crime.offense_category || '不明'} />
+        <div className="px-6 py-5">
+          <div className="bg-gray-50 border border-gray-100 rounded-xl overflow-hidden divide-y divide-gray-100">
+            <DetailRow label="発生日時" value={formatDate(crime.offense_date)} />
+            <DetailRow label="報告日時" value={formatDate(crime.report_date_time)} />
+            <DetailRow label="住所" value={crime.block_address || '不明'} />
+            <DetailRow
+              label="管轄区 / セクター / ビート"
+              value={`${crime.precinct} / ${crime.sector} / ${crime.beat}`}
+            />
+            <DetailRow label="地区" value={crime.neighborhood || '不明'} />
+            <DetailRow label="被害カテゴリ" value={crime.nibrs_crime_against_category || '不明'} />
+            <DetailRow label="カテゴリ" value={crime.offense_category || '不明'} />
+          </div>
         </div>
 
         {/* Footer */}
         <div className="px-6 pb-5">
           <button
             onClick={onClose}
-            className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 rounded-xl font-semibold transition-colors"
+            className="w-full py-2.5 bg-green-500 hover:bg-green-600 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
           >
             閉じる
           </button>
@@ -64,9 +79,9 @@ export function CrimeDetail({ crime, onClose }: Props) {
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-xs text-blue-400 uppercase tracking-wider">{label}</span>
-      <span className="text-sm text-white">{value}</span>
+    <div className="flex items-start justify-between gap-4 px-4 py-3">
+      <span className="text-gray-400 text-[11px] font-medium shrink-0 mt-0.5">{label}</span>
+      <span className="text-gray-700 text-xs text-right leading-relaxed">{value}</span>
     </div>
   )
 }

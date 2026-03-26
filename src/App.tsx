@@ -1,8 +1,12 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useJsApiLoader } from '@react-google-maps/api'
 import { Map } from './components/Map'
-import { SidePanel } from './components/SidePanel'
+import { Header } from './components/Header'
+import { NavBar, type NavItem } from './components/NavBar'
+import { RightPanel } from './components/RightPanel'
 import { CrimeDetail } from './components/CrimeDetail'
+import { SettingsPage } from './components/Settings'
+import { ProfilePage } from './components/Profile'
 import { useCrimeData } from './hooks/useCrimeData'
 import type { CrimeFilters, CrimeRecord } from './types/crime'
 import type { RouteScore } from './utils/routeScore'
@@ -16,15 +20,19 @@ const DEFAULT_FILTERS: CrimeFilters = {
 // ライブラリ配列はモジュールレベルで定義（再レンダリングで参照が変わらないようにする）
 const LIBRARIES: ('places' | 'visualization')[] = ['places', 'visualization']
 
+const FULL_PAGE_NAVS: NavItem[] = ['settings', 'profile']
+
 export default function App() {
   const { isLoaded, loadError } = useJsApiLoader({
     googleMapsApiKey: import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '',
     libraries: LIBRARIES,
   })
 
+  const [activeNav, setActiveNav] = useState<NavItem>('map')
+  const [rightPanelOpen, setRightPanelOpen] = useState(true)
   const [filters, setFilters] = useState<CrimeFilters>(DEFAULT_FILTERS)
+  const [neighborhood, setNeighborhood] = useState<string>('ALL')
   const [selectedCrime, setSelectedCrime] = useState<CrimeRecord | null>(null)
-  const [sidePanelOpen, setSidePanelOpen] = useState(true)
   const [routes, setRoutes] = useState<google.maps.DirectionsRoute[]>([])
   const [routeScores, setRouteScores] = useState<RouteScore[]>([])
   const [selectedRouteIndex, setSelectedRouteIndex] = useState(0)
@@ -35,10 +43,38 @@ export default function App() {
 
   const { data, loading, error, refetch, lastUpdated } = useCrimeData(filters)
 
+  const availableNeighborhoods = useMemo(
+    () => [...new Set(data.map((r) => r.neighborhood).filter(Boolean))].sort(),
+    [data],
+  )
+
+  const filteredData = useMemo(
+    () => (neighborhood === 'ALL' ? data : data.filter((r) => r.neighborhood === neighborhood)),
+    [data, neighborhood],
+  )
+
+  const isFullPage = FULL_PAGE_NAVS.includes(activeNav)
+
+  const handleNavChange = (item: NavItem) => {
+    const wasFullPage = FULL_PAGE_NAVS.includes(activeNav)
+    const willBeFullPage = FULL_PAGE_NAVS.includes(item)
+
+    if (item === activeNav && !willBeFullPage) {
+      // same map-area tab: toggle right panel
+      setRightPanelOpen((prev) => !prev)
+    } else {
+      setActiveNav(item)
+      // restore right panel when returning to map area from full-page
+      if (wasFullPage && !willBeFullPage) {
+        setRightPanelOpen(true)
+      }
+    }
+  }
+
   const handleRoutesReady = (
     newRoutes: google.maps.DirectionsRoute[],
     scores: RouteScore[],
-    selectedIndex: number
+    selectedIndex: number,
   ) => {
     setRoutes(newRoutes)
     setRouteScores(scores)
@@ -65,92 +101,108 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-slate-950 overflow-hidden">
-      <SidePanel
-        filters={filters}
-        onFilterChange={setFilters}
-        data={data}
+    <div className="flex flex-col h-screen bg-white overflow-hidden">
+      <Header
+        dataCount={filteredData.length}
         loading={loading}
-        lastUpdated={lastUpdated}
         onRefetch={refetch}
-        selectedCrime={selectedCrime}
-        onSelectCrime={setSelectedCrime}
-        isOpen={sidePanelOpen}
-        onToggle={() => setSidePanelOpen(!sidePanelOpen)}
-        onRoutesReady={handleRoutesReady}
-        onRouteClear={handleRouteClear}
-        isLoaded={isLoaded}
-        pinMode={pinMode}
-        onPinModeChange={setPinMode}
-        originCoords={originCoords}
-        destCoords={destCoords}
-        onOriginCoordsChange={setOriginCoords}
-        onDestCoordsChange={setDestCoords}
+        lastUpdated={lastUpdated}
       />
 
-      <main className="flex-1 flex flex-col relative">
-        {/* ピンモード時のヒント */}
-        {pinMode !== 'none' && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-blue-700/90 border border-blue-400/50 text-white px-4 py-2 rounded-xl text-sm backdrop-blur shadow-lg">
-            <span>📍</span>
-            <span>{pinMode === 'origin' ? '出発地' : '目的地'}を地図上でクリックしてください</span>
-            <button onClick={() => setPinMode('none')} className="ml-2 text-blue-200 hover:text-white">✕</button>
-          </div>
-        )}
+      <div className="flex flex-1 overflow-hidden">
+        <NavBar activeNav={activeNav} onNavChange={handleNavChange} />
 
-        {error && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-red-900/90 border border-red-500/50 text-red-200 px-4 py-2 rounded-xl text-sm backdrop-blur">
-            {error}
-          </div>
-        )}
+        {/* Full-page views (Settings / Profile) */}
+        {isFullPage ? (
+          activeNav === 'settings' ? <SettingsPage /> : <ProfilePage />
+        ) : (
+          <>
+            {/* Map area */}
+            <main className="flex-1 flex flex-col relative overflow-hidden">
+              {/* Pin mode hint */}
+              {pinMode !== 'none' && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 bg-white border border-green-300 text-gray-800 px-4 py-2.5 rounded-xl text-xs font-medium shadow-lg">
+                  <span className="text-green-500">📍</span>
+                  <span>{pinMode === 'origin' ? '出発地' : '目的地'}を地図上でクリック</span>
+                  <button
+                    onClick={() => setPinMode('none')}
+                    className="ml-1 w-5 h-5 flex items-center justify-center rounded-md bg-gray-100 hover:bg-gray-200 text-gray-400 hover:text-gray-600 transition-colors text-[11px]"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
 
-        {loading && (
-          <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-slate-900/90 border border-blue-500/30 px-3 py-2 rounded-xl backdrop-blur">
-            <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-            <span className="text-blue-300 text-xs">データ取得中...</span>
-          </div>
-        )}
+              {error && (
+                <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 bg-red-50 border border-red-200 text-red-600 px-4 py-2.5 rounded-xl text-xs font-medium shadow">
+                  {error}
+                </div>
+              )}
 
-        {!loading && routes.length === 0 && (
-          <div className="absolute top-4 right-4 z-20 flex items-center gap-2 bg-slate-900/90 border border-blue-500/30 px-3 py-2 rounded-xl backdrop-blur">
-            <span className="text-blue-300 text-xs">
-              {data.length.toLocaleString()} 件表示中
-            </span>
-            <button
-              onClick={() => setShowHeatmap(!showHeatmap)}
-              className={`text-xs px-2 py-1 rounded-lg font-semibold transition-colors ${
-                showHeatmap
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
-              }`}
-            >
-              {showHeatmap ? '🔥 ヒートマップ ON' : '🔥 ヒートマップ'}
-            </button>
-          </div>
-        )}
+              {/* Open panel button when collapsed */}
+              {!rightPanelOpen && (
+                <button
+                  onClick={() => setRightPanelOpen(true)}
+                  className="absolute top-4 right-4 z-20 w-9 h-9 flex items-center justify-center bg-white border border-gray-200 rounded-xl shadow-sm text-gray-500 hover:text-gray-700 hover:border-green-300 transition-all"
+                  title="パネルを開く"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <line x1="9" y1="3" x2="9" y2="21"/>
+                  </svg>
+                </button>
+              )}
 
-        <Map
-          isLoaded={isLoaded}
-          loadError={loadError}
-          data={data}
-          selectedCrime={selectedCrime}
-          onSelectCrime={setSelectedCrime}
-          routes={routes}
-          routeScores={routeScores}
-          selectedRouteIndex={selectedRouteIndex}
-          pinMode={pinMode}
-          originCoords={originCoords}
-          destCoords={destCoords}
-          onMapClick={handleMapClick}
-          showHeatmap={showHeatmap}
-        />
-      </main>
+              <Map
+                isLoaded={isLoaded}
+                loadError={loadError}
+                data={filteredData}
+                selectedCrime={selectedCrime}
+                onSelectCrime={setSelectedCrime}
+                routes={routes}
+                routeScores={routeScores}
+                selectedRouteIndex={selectedRouteIndex}
+                pinMode={pinMode}
+                originCoords={originCoords}
+                destCoords={destCoords}
+                onMapClick={handleMapClick}
+                showHeatmap={showHeatmap}
+              />
+            </main>
+
+            {/* Right panel */}
+            {rightPanelOpen && (
+              <RightPanel
+                activeNav={activeNav}
+                onClose={() => setRightPanelOpen(false)}
+                filters={filters}
+                onFilterChange={setFilters}
+                neighborhood={neighborhood}
+                onNeighborhoodChange={setNeighborhood}
+                availableNeighborhoods={availableNeighborhoods}
+                data={filteredData}
+                loading={loading}
+                selectedCrime={selectedCrime}
+                onSelectCrime={setSelectedCrime}
+                onRoutesReady={handleRoutesReady}
+                onRouteClear={handleRouteClear}
+                isLoaded={isLoaded}
+                pinMode={pinMode}
+                onPinModeChange={setPinMode}
+                originCoords={originCoords}
+                destCoords={destCoords}
+                onOriginCoordsChange={setOriginCoords}
+                onDestCoordsChange={setDestCoords}
+                showHeatmap={showHeatmap}
+                onHeatmapToggle={() => setShowHeatmap(!showHeatmap)}
+              />
+            )}
+          </>
+        )}
+      </div>
 
       {selectedCrime && (
-        <CrimeDetail
-          crime={selectedCrime}
-          onClose={() => setSelectedCrime(null)}
-        />
+        <CrimeDetail crime={selectedCrime} onClose={() => setSelectedCrime(null)} />
       )}
     </div>
   )
