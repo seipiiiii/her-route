@@ -18,6 +18,14 @@ const DEFAULT_FILTERS: CrimeFilters = {
   precinct: 'ALL',
 }
 
+// 都市ごとのデフォルト日付範囲
+// LA/NYC は公開データの更新頻度が低いため 'all' を使用
+const CITY_DEFAULT_DATE_RANGE: Record<CityId, CrimeFilters['dateRange']> = {
+  seattle:    'month',
+  losangeles: 'all',
+  newyork:    'all',
+}
+
 // ライブラリ配列はモジュールレベルで定義（再レンダリングで参照が変わらないようにする）
 const LIBRARIES: ('places' | 'visualization')[] = ['places', 'visualization']
 
@@ -74,7 +82,7 @@ export default function App() {
 
   const handleCityChange = (newCity: CityId) => {
     setCity(newCity)
-    setFilters(DEFAULT_FILTERS)
+    setFilters({ ...DEFAULT_FILTERS, dateRange: CITY_DEFAULT_DATE_RANGE[newCity] })
     setNeighborhood('ALL')
   }
 

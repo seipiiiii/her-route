@@ -10,7 +10,8 @@ import { CITIES } from './cityConfig'
 const CITY_API_URLS: Record<CityId, string> = {
   seattle: 'https://data.seattle.gov/resource/tazs-3rd5.json',
   losangeles: 'https://data.lacity.org/resource/2nrs-mtv8.json',
-  newyork: 'https://data.cityofnewyork.us/resource/qgea-i56i.json',
+  // 現在年 YTD（qgea-i56i は Historic のため 5uac-w243 を使用）
+  newyork: 'https://data.cityofnewyork.us/resource/5uac-w243.json',
 }
 
 // ─── FBI Crime Data Explorer API ─────────────────────────────────────────────
@@ -30,6 +31,11 @@ function getFromDate(dateRange: CrimeFilters['dateRange']): Date | null {
     case 'year':     return new Date(now.getTime() - 365 * 86400_000)
     default:         return null
   }
+}
+
+/** YYYY-MM-DD 形式に変換 */
+function toISODate(d: Date): string {
+  return d.toISOString().split('T')[0]
 }
 
 // ─── 正規化関数 ───────────────────────────────────────────────────────────────
@@ -152,33 +158,63 @@ export async function fetchCrimeData(
   }
 
   if (city === 'losangeles') {
-    const url = `${CITY_API_URLS.losangeles}?$limit=${limit}&$order=date_occ%20DESC`
+    // Socrata $where でバウンド外（lat=0など無効座標）をサーバー側除外
+    // ※ LAPD データは更新が数ヶ月単位のため dateRange='all' 推奨
+    const where: string[] = [
+      `lat > ${bounds.minLat}`,
+      `lat < ${bounds.maxLat}`,
+      `lon > ${bounds.minLng}`,
+      `lon < ${bounds.maxLng}`,
+    ]
+    if (fromDate) {
+      where.push(`date_occ >= '${toISODate(fromDate)}T00:00:00.000'`)
+    }
+
+    const url =
+      `${CITY_API_URLS.losangeles}?$limit=${limit}` +
+      `&$order=date_occ%20DESC` +
+      `&$where=${encodeURIComponent(where.join(' AND '))}`
+
     const res = await fetch(url, { headers: { Accept: 'application/json' } })
     if (!res.ok) throw new Error(`LA API error: ${res.status}`)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data: any[] = await res.json()
 
+    // サーバー側でバウンド済みなので座標確認のみ
     return data.filter(r => {
       const lat = parseFloat(r.lat), lng = parseFloat(r.lon)
-      if (isNaN(lat) || isNaN(lng) || !inBounds(lat, lng)) return false
-      if (fromDate && r.date_occ && new Date(r.date_occ) < fromDate) return false
-      return true
+      return !isNaN(lat) && !isNaN(lng) && inBounds(lat, lng)
     }).map(normalizeLA)
   }
 
-  // newyork
-  const url = `${CITY_API_URLS.newyork}?$limit=${limit}&$order=cmplnt_fr_dt%20DESC`
-  const res = await fetch(url, { headers: { Accept: 'application/json' } })
-  if (!res.ok) throw new Error(`NYC API error: ${res.status}`)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data: any[] = await res.json()
+  // newyork (5uac-w243: Current Year YTD)
+  // ※ NYC データも更新が数ヶ月単位のため dateRange='all' 推奨
+  {
+    const where: string[] = [
+      `latitude > ${bounds.minLat}`,
+      `latitude < ${bounds.maxLat}`,
+      `longitude > ${bounds.minLng}`,
+      `longitude < ${bounds.maxLng}`,
+    ]
+    if (fromDate) {
+      where.push(`cmplnt_fr_dt >= '${toISODate(fromDate)}T00:00:00.000'`)
+    }
 
-  return data.filter(r => {
-    const lat = parseFloat(r.latitude), lng = parseFloat(r.longitude)
-    if (isNaN(lat) || isNaN(lng) || !inBounds(lat, lng)) return false
-    if (fromDate && r.cmplnt_fr_dt && new Date(r.cmplnt_fr_dt) < fromDate) return false
-    return true
-  }).map(normalizeNYC)
+    const url =
+      `${CITY_API_URLS.newyork}?$limit=${limit}` +
+      `&$order=cmplnt_fr_dt%20DESC` +
+      `&$where=${encodeURIComponent(where.join(' AND '))}`
+
+    const res = await fetch(url, { headers: { Accept: 'application/json' } })
+    if (!res.ok) throw new Error(`NYC API error: ${res.status}`)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data: any[] = await res.json()
+
+    return data.filter(r => {
+      const lat = parseFloat(r.latitude), lng = parseFloat(r.longitude)
+      return !isNaN(lat) && !isNaN(lng) && inBounds(lat, lng)
+    }).map(normalizeNYC)
+  }
 }
 
 // ─── FBI Crime Data Explorer API ─────────────────────────────────────────────

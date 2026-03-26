@@ -97,7 +97,7 @@ function OverviewPanel({ data, loading, city }: Pick<Props, 'data' | 'loading' |
       </div>
 
       {/* FBI CDE 統計 */}
-      {hasKey ? (
+      {hasKey && (
         <div>
           <div className="flex items-center justify-between mb-3">
             <p className={sectionLabel}>FBI CDE 年間統計 (2022)</p>
@@ -128,18 +128,8 @@ function OverviewPanel({ data, loading, city }: Pick<Props, 'data' | 'loading' |
               </p>
             </>
           ) : !fbiLoading ? (
-            <p className="text-gray-400 text-xs">このエージェントのFBIデータは取得できませんでした。</p>
+            <p className="text-gray-400 text-xs">FBIデータを取得できませんでした。</p>
           ) : null}
-        </div>
-      ) : (
-        <div className="bg-blue-50 border border-blue-100 rounded-xl p-3">
-          <p className="text-blue-700 text-xs font-semibold mb-1">💡 FBI CDE 統計を有効化</p>
-          <p className="text-blue-600 text-[11px] leading-relaxed">
-            環境変数 <code className="bg-blue-100 px-1 rounded">VITE_FBI_API_KEY</code> を設定すると
-            FBI Crime Data Explorer の年間集計が表示されます。
-            <br />
-            キーは <span className="underline">api.data.gov/signup</span> から無料取得できます。
-          </p>
         </div>
       )}
 
