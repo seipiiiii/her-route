@@ -3,7 +3,8 @@ import { GoogleMap, OverlayView } from '@react-google-maps/api'
 import type { CrimeRecord, CityId } from '../types/crime'
 import type { RouteScore } from '../utils/routeScore'
 import { CITIES } from '../utils/cityConfig'
-import { computeStreetSegments, STREET_STYLES } from '../utils/streetLayer'
+import { computeStreetSegments, snapSegmentsToRoads, STREET_STYLES } from '../utils/streetLayer'
+import type { StreetSegment } from '../utils/streetLayer'
 
 const MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
@@ -97,6 +98,7 @@ export function Map({
   const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
   const heatmapRef = useRef<google.maps.visualization.HeatmapLayer | null>(null)
   const [zoom, setZoom] = useState(12)
+  const [snappedSegments, setSnappedSegments] = useState<StreetSegment[] | null>(null)
 
   const cityInfo = CITIES[city]
 
@@ -168,7 +170,26 @@ export function Map({
   }, [isLoaded, routes, routeScores, selectedRouteIndex])
 
   // ストリートカラーリング（ズーム14以上で表示）
-  const streetSegments = useMemo(() => computeStreetSegments(data, 30), [data])
+  const streetSegments = useMemo(() => computeStreetSegments(data, 30, city), [data, city])
+
+  // Roads API でセグメントを道路にスナップ（非同期・都市/データが変わったとき1回）
+  useEffect(() => {
+    setSnappedSegments(null)
+    if (streetSegments.length === 0) return
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''
+    if (!apiKey) return
+
+    const controller = new AbortController()
+    snapSegmentsToRoads(streetSegments, apiKey, city, controller.signal)
+      .then((snapped) => {
+        if (!controller.signal.aborted) setSnappedSegments(snapped)
+      })
+      .catch(() => { /* fallback to heuristic */ })
+
+    return () => controller.abort()
+  }, [streetSegments, city])
+
+  const displaySegments = snappedSegments ?? streetSegments
 
   useEffect(() => {
     // 既存のストリートポリラインを削除
@@ -184,7 +205,7 @@ export function Map({
       return iw
     })()
 
-    for (const seg of streetSegments) {
+    for (const seg of displaySegments) {
       const style = STREET_STYLES[seg.dangerLevel]
 
       const polylineOptions: google.maps.PolylineOptions = {
@@ -243,7 +264,7 @@ export function Map({
       streetPolylineRefs.current = []
       infoWindowRef.current?.close()
     }
-  }, [isLoaded, zoom, streetSegments])
+  }, [isLoaded, zoom, displaySegments])
 
   // ヒートマップ
   useEffect(() => {

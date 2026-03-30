@@ -1,4 +1,4 @@
-import type { CrimeRecord } from '../types/crime'
+import type { CrimeRecord, CityId } from '../types/crime'
 
 export type DangerLevel = 'high' | 'medium' | 'low'
 
@@ -10,49 +10,46 @@ export interface StreetSegment {
   dangerScore: number // 0-100
 }
 
-/** Seattle avenues run N-S; streets run E-W. Other cities default to E-W. */
-function estimateOrientation(blockAddress: string): 'ns' | 'ew' {
-  const lower = blockAddress.toLowerCase()
-  if (
-    /\bave\b/.test(lower) ||
-    /\bavenue\b/.test(lower) ||
-    /\bav\b/.test(lower) ||
-    // numbered avenues: "3rd ave n", "15th ave"
-    /\d+(st|nd|rd|th)\s+ave/.test(lower)
-  ) {
-    return 'ns'
-  }
-  return 'ew'
+// City-specific grid bearings (degrees from north, clockwise).
+// aveBearing: bearing for avenue-type streets (runs N-S-ish)
+// stBearing: bearing for street-type roads (runs E-W-ish, perpendicular)
+const CITY_GRID: Partial<Record<CityId, { aveBearing: number; stBearing: number }>> = {
+  seattle:    { aveBearing: 332, stBearing:  62 }, // downtown grid ~28° off true north
+  newyork:    { aveBearing:  29, stBearing: 119 }, // Manhattan grid
+  losangeles: { aveBearing:   0, stBearing:  90 }, // mostly cardinal
 }
 
-/** Returns a ~150 m polyline path centred at (lat, lng) with the given orientation. */
+function estimateOrientation(blockAddress: string): 'ave' | 'st' {
+  const lower = blockAddress.toLowerCase()
+  if (/\bave\b|\bavenue\b|\bav\b/.test(lower)) return 'ave'
+  return 'st'
+}
+
+function degToRad(deg: number) {
+  return (deg * Math.PI) / 180
+}
+
+/** Builds a ~150 m polyline path centred at (lat, lng) along bearingDeg. */
 function makeSegmentPath(
   lat: number,
   lng: number,
-  orientation: 'ns' | 'ew',
+  bearingDeg: number,
 ): google.maps.LatLngLiteral[] {
-  // ~0.0007 deg ≈ 78 m → total segment ≈ 156 m
-  const HALF = 0.0007
-  if (orientation === 'ns') {
-    return [
-      { lat: lat - HALF, lng },
-      { lat: lat + HALF, lng },
-    ]
-  }
-  const lngAdj = HALF / Math.cos((lat * Math.PI) / 180)
+  const HALF = 0.0007 // ~78 m → total ~156 m
+  const b = degToRad(bearingDeg)
+  const cosLat = Math.cos(degToRad(lat))
+  const dLat = HALF * Math.cos(b)
+  const dLng = HALF * Math.sin(b) / cosLat
   return [
-    { lat, lng: lng - lngAdj },
-    { lat, lng: lng + lngAdj },
+    { lat: lat - dLat, lng: lng - dLng },
+    { lat: lat + dLat, lng: lng + dLng },
   ]
 }
 
-/**
- * Groups crimes by block_address, ranks by count, and returns polyline segments
- * for the top `thresholdPct` percent of streets.
- */
 export function computeStreetSegments(
   data: CrimeRecord[],
   thresholdPct = 30,
+  city: CityId = 'seattle',
 ): StreetSegment[] {
   const blockMap = new Map<string, { latSum: number; lngSum: number; count: number }>()
 
@@ -80,11 +77,14 @@ export function computeStreetSegments(
   const cutoff = Math.ceil(total * (thresholdPct / 100))
   const top10 = Math.ceil(total * 0.1)
   const top20 = Math.ceil(total * 0.2)
+  const grid = CITY_GRID[city] ?? { aveBearing: 0, stBearing: 90 }
 
   return sorted.slice(0, cutoff).map(([blockAddress, { latSum, lngSum, count }], i) => {
     const lat = latSum / count
     const lng = lngSum / count
-    const path = makeSegmentPath(lat, lng, estimateOrientation(blockAddress))
+    const orientation = estimateOrientation(blockAddress)
+    const bearingDeg = orientation === 'ave' ? grid.aveBearing : grid.stBearing
+    const path = makeSegmentPath(lat, lng, bearingDeg)
     const dangerScore = Math.round((count / maxCount) * 100)
 
     let dangerLevel: DangerLevel
@@ -93,6 +93,73 @@ export function computeStreetSegments(
     else dangerLevel = 'low'
 
     return { blockAddress, path, crimeCount: count, dangerLevel, dangerScore }
+  })
+}
+
+// --- Roads API snapping ---
+
+async function fetchNearestRoads(
+  points: google.maps.LatLngLiteral[],
+  apiKey: string,
+): Promise<(google.maps.LatLngLiteral | null)[]> {
+  if (points.length === 0) return []
+  const query = points.map((p) => `${p.lat},${p.lng}`).join('|')
+  try {
+    const resp = await fetch(
+      `https://roads.googleapis.com/v1/nearestRoads?points=${encodeURIComponent(query)}&key=${apiKey}`,
+    )
+    if (!resp.ok) return points.map(() => null)
+    const data = await resp.json()
+    const result: (google.maps.LatLngLiteral | null)[] = points.map(() => null)
+    for (const sp of data.snappedPoints ?? []) {
+      if (sp.originalIndex != null) {
+        result[sp.originalIndex] = {
+          lat: sp.location.latitude,
+          lng: sp.location.longitude,
+        }
+      }
+    }
+    return result
+  } catch {
+    return points.map(() => null)
+  }
+}
+
+/**
+ * Snaps each segment's centroid to the nearest road via Google Roads API,
+ * then redraws the segment along the city grid bearing at the snapped position.
+ * Falls back silently to the original heuristic path on any error.
+ */
+export async function snapSegmentsToRoads(
+  segments: StreetSegment[],
+  apiKey: string,
+  city: CityId = 'seattle',
+  signal?: AbortSignal,
+): Promise<StreetSegment[]> {
+  const grid = CITY_GRID[city] ?? { aveBearing: 0, stBearing: 90 }
+
+  const centroids: google.maps.LatLngLiteral[] = segments.map((seg) => ({
+    lat: (seg.path[0].lat + seg.path[1].lat) / 2,
+    lng: (seg.path[0].lng + seg.path[1].lng) / 2,
+  }))
+
+  const BATCH = 100
+  const snapped: (google.maps.LatLngLiteral | null)[] = new Array(centroids.length).fill(null)
+
+  for (let i = 0; i < centroids.length; i += BATCH) {
+    if (signal?.aborted) return segments
+    const batchResult = await fetchNearestRoads(centroids.slice(i, i + BATCH), apiKey)
+    batchResult.forEach((pt, j) => { snapped[i + j] = pt })
+  }
+
+  if (signal?.aborted) return segments
+
+  return segments.map((seg, i) => {
+    const center = snapped[i]
+    if (!center) return seg
+    const orientation = estimateOrientation(seg.blockAddress)
+    const bearingDeg = orientation === 'ave' ? grid.aveBearing : grid.stBearing
+    return { ...seg, path: makeSegmentPath(center.lat, center.lng, bearingDeg) }
   })
 }
 
