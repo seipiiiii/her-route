@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { GoogleMap, OverlayView } from '@react-google-maps/api'
 import type { CrimeRecord, CityId } from '../types/crime'
 import type { RouteScore } from '../utils/routeScore'
 import { CITIES } from '../utils/cityConfig'
+import { computeStreetSegments, STREET_STYLES } from '../utils/streetLayer'
 
 const MAP_STYLES: google.maps.MapTypeStyle[] = [
   { elementType: 'geometry', stylers: [{ color: '#0f172a' }] },
@@ -92,6 +93,8 @@ export function Map({
 }: Props) {
   const mapRef = useRef<google.maps.Map | null>(null)
   const polylineRefs = useRef<google.maps.Polyline[]>([])
+  const streetPolylineRefs = useRef<google.maps.Polyline[]>([])
+  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null)
   const heatmapRef = useRef<google.maps.visualization.HeatmapLayer | null>(null)
   const [zoom, setZoom] = useState(12)
 
@@ -164,6 +167,84 @@ export function Map({
     }
   }, [isLoaded, routes, routeScores, selectedRouteIndex])
 
+  // ストリートカラーリング（ズーム14以上で表示）
+  const streetSegments = useMemo(() => computeStreetSegments(data, 30), [data])
+
+  useEffect(() => {
+    // 既存のストリートポリラインを削除
+    streetPolylineRefs.current.forEach((p) => p.setMap(null))
+    streetPolylineRefs.current = []
+    infoWindowRef.current?.close()
+
+    if (!isLoaded || !mapRef.current || zoom < 14) return
+
+    const infoWindow = infoWindowRef.current ?? (() => {
+      const iw = new google.maps.InfoWindow({ disableAutoPan: true })
+      infoWindowRef.current = iw
+      return iw
+    })()
+
+    for (const seg of streetSegments) {
+      const style = STREET_STYLES[seg.dangerLevel]
+
+      const polylineOptions: google.maps.PolylineOptions = {
+        path: seg.path,
+        geodesic: true,
+        strokeColor: style.color,
+        strokeOpacity: style.dashed ? 0 : style.opacity,
+        strokeWeight: style.weight,
+        map: mapRef.current!,
+        zIndex: seg.dangerLevel === 'high' ? 10 : seg.dangerLevel === 'medium' ? 9 : 8,
+      }
+
+      if (style.dashed) {
+        polylineOptions.icons = [
+          {
+            icon: {
+              path: 'M 0,-1 0,1',
+              strokeOpacity: style.opacity,
+              strokeColor: style.color,
+              scale: style.weight,
+            },
+            offset: '0',
+            repeat: '12px',
+          },
+        ]
+      }
+
+      const polyline = new google.maps.Polyline(polylineOptions)
+
+      polyline.addListener('mouseover', (e: google.maps.MapMouseEvent) => {
+        if (!e.latLng) return
+        infoWindow.setContent(
+          `<div style="font-family:sans-serif;font-size:13px;color:#111827;padding:6px 2px;min-width:160px">
+            <div style="font-weight:600;margin-bottom:4px">${seg.blockAddress}</div>
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:2px">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${style.color}"></span>
+              <span>${style.label}</span>
+              <span style="margin-left:auto;font-weight:600">${seg.dangerScore}/100</span>
+            </div>
+            <div style="color:#6B7280;font-size:12px">インシデント: ${seg.crimeCount}件</div>
+          </div>`,
+        )
+        infoWindow.setPosition(e.latLng)
+        infoWindow.open(mapRef.current!)
+      })
+
+      polyline.addListener('mouseout', () => {
+        infoWindow.close()
+      })
+
+      streetPolylineRefs.current.push(polyline)
+    }
+
+    return () => {
+      streetPolylineRefs.current.forEach((p) => p.setMap(null))
+      streetPolylineRefs.current = []
+      infoWindowRef.current?.close()
+    }
+  }, [isLoaded, zoom, streetSegments])
+
   // ヒートマップ
   useEffect(() => {
     if (!isLoaded || !mapRef.current) return
@@ -229,8 +310,13 @@ export function Map({
     )
   }
 
-  // ズームが低いときはマーカーを間引く
-  const visibleData = zoom < 11 ? data.filter((_, i) => i % 3 === 0) : data
+  // ズームレベルに応じてマーカー表示を制御
+  // zoom < 11: 間引き表示, zoom 14-16: ストリートライン表示のためドット非表示, zoom >= 17: 再表示
+  const visibleData = zoom >= 14 && zoom < 17
+    ? []
+    : zoom < 11
+    ? data.filter((_, i) => i % 3 === 0)
+    : data
 
   return (
     <div className={`flex-1 h-full relative ${pinMode !== 'none' ? 'cursor-crosshair' : ''}`}>
@@ -286,22 +372,46 @@ export function Map({
       </GoogleMap>
 
       {/* 凡例 */}
-      <div className="absolute bottom-8 left-4 bg-white/95 backdrop-blur border border-gray-200 rounded-xl p-3 text-xs space-y-1.5 shadow-sm">
-        <p className="text-gray-600 font-semibold mb-2">凡例</p>
-        {[
-          { label: '暴行・殺人', color: '#ef4444' },
-          { label: '強盗・武器', color: '#f97316' },
-          { label: '窃盗・盗難', color: '#eab308' },
-          { label: '財産犯罪', color: '#3b82f6' },
-          { label: '薬物', color: '#a855f7' },
-          { label: '性犯罪', color: '#ec4899' },
-          { label: 'その他', color: '#94a3b8' },
-        ].map(({ label, color }) => (
-          <div key={label} className="flex items-center gap-2">
-            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
-            <span className="text-gray-600">{label}</span>
-          </div>
-        ))}
+      <div className="absolute bottom-8 left-4 bg-white/95 backdrop-blur border border-gray-200 rounded-xl p-3 text-xs shadow-sm">
+        {zoom >= 14 ? (
+          <>
+            <p className="text-gray-600 font-semibold mb-2">危険度</p>
+            <div className="flex items-center gap-3">
+              {(
+                [
+                  { label: '高', color: '#EF4444' },
+                  { label: '中', color: '#F97316' },
+                  { label: '注意', color: '#FBBF24' },
+                ] as { label: string; color: string }[]
+              ).map(({ label, color }) => (
+                <div key={label} className="flex items-center gap-1.5">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                  <span className="text-gray-600">{label}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-gray-600 font-semibold mb-2">凡例</p>
+            <div className="space-y-1.5">
+              {[
+                { label: '暴行・殺人', color: '#ef4444' },
+                { label: '強盗・武器', color: '#f97316' },
+                { label: '窃盗・盗難', color: '#eab308' },
+                { label: '財産犯罪', color: '#3b82f6' },
+                { label: '薬物', color: '#a855f7' },
+                { label: '性犯罪', color: '#ec4899' },
+                { label: 'その他', color: '#94a3b8' },
+              ].map(({ label, color }) => (
+                <div key={label} className="flex items-center gap-2">
+                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: color }} />
+                  <span className="text-gray-600">{label}</span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
